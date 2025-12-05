@@ -1,0 +1,40 @@
+{
+  "hello": "Hello",
+  "bind": {
+    "title": "Bind Phone",
+    "subtitle": "Please enter your phone number to complete binding",
+    "phoneLabel": "Phone Number",
+    "phonePlaceholder": "Enter phone number (09xxxxxxxx)",
+    "submit": "Bind",
+    "loading": "Binding...",
+    "success": "Binding successful, redirecting...",
+    "error": {
+      "generic": "Binding failed, please try again later",
+      "invalidPhone": "Please enter a valid phone number",
+      "alreadyBound": "This phone number is already bound"
+    }
+  },
+  "period": {
+    "title": "Period Records",
+    "addRecord": "Add Period Record",
+    "startDate": "Start Date",
+    "endDate": "End Date",
+    "selectDate": "Select Date",
+    "submit": "Submit",
+    "loading": "Saving...",
+    "success": "Record saved successfully",
+    "error": {
+      "generic": "Saving failed, please try again later",
+      "invalidDate": "Please select a valid date"
+    },
+    "history": {
+      "title": "History",
+      "noData": "No records yet",
+      "nextPeriod": "Next period expected"
+    }
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred"
+  }
+}

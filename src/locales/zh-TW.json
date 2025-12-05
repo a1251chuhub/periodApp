@@ -1,0 +1,41 @@
+{
+  "hello": "你好",
+  "bind": {
+    "title": "綁定手機",
+    "subtitle": "請輸入您的手機號碼以完成綁定",
+    "phoneLabel": "手機號碼",
+    "phonePlaceholder": "請輸入手機號碼 (09xxxxxxxx)",
+    "submit": "綁定",
+    "loading": "綁定中...",
+    "success": "綁定成功，正在跳轉...",
+    "error": {
+      "generic": "綁定失敗，請稍後再試",
+      "invalidPhone": "請輸入有效的手機號碼",
+      "alreadyBound": "此手機號碼已被綁定"
+    }
+  },
+  "period": {
+    "title": "經期記錄",
+    "addRecord": "新增經期記錄",
+    "startDate": "開始日期",
+    "endDate": "結束日期",
+    "selectDate": "選擇日期",
+    "submit": "儲存",
+    "loading": "儲存中...",
+    "success": "記錄新增成功",
+    "error": {
+      "generic": "儲存失敗，請稍後再試",
+      "invalidDate": "請選擇有效日期"
+    },
+    "history": {
+      "title": "歷史記錄",
+      "noData": "尚未有記錄",
+      "nextPeriod": "下次經期預計"
+    }
+  },
+  "common": {
+    "loading": "載入中...",
+    "error": "發生錯誤",
+    "retry": "重試"
+  }
+}

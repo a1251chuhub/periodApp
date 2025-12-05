@@ -1,0 +1,531 @@
+專案規格書：GoMoond Moon Butler (谷慕慕月亮小管家)
+
+項目
+
+內容
+
+專案名稱
+
+GoMoond Moon Butler (谷慕慕月亮小管家)
+
+文件版本
+
+v3.3 (Skip Ragic Integration Strategy)
+
+核心目標
+
+建立基於 LINE LIFF 的經期紀錄工具，具備多語言擴充能力，並與 Ragic CRM 深度整合以實現數據驅動的再行銷。
+
+1. 系統架構 (System Architecture)
+
+本系統採用 前後端分離 (Decoupled Architecture) 與 混合資料庫 策略，並預先導入 國際化 (i18n) 架構。
+
+1.1 技術堆疊 (Tech Stack)
+
+領域
+
+技術選型
+
+備註
+
+Frontend
+
+Next.js 14+ (App Router)
+
+UI 框架，需使用 Server Components 優化效能
+
+Styling
+
+Tailwind CSS
+
+樣式處理，禁止撰寫全域 CSS 檔案
+
+Platform
+
+LINE LIFF SDK
+
+運行平台
+
+I18n
+
+next-intl (建議)
+
+多語言處理
+
+Backend
+
+Node.js (Next.js API Routes)
+
+輕量化 API 服務，與前端同構
+
+App DB
+
+Supabase (PostgreSQL)
+
+儲存流水帳、設定、推播佇列
+
+CRM DB
+
+Ragic
+
+會員個資 Single Source of Truth
+
+1.2 多語言策略 (Localization / i18n)
+
+預設/支援語言：
+
+預設：zh-TW (繁體中文)
+
+預留：en-US (英文), ja-JP (日文)
+
+前端規範：
+
+Zero Hardcode Policy：嚴格禁止在 Component 內寫死文字。
+
+所有顯示文字需抽離至 locales/zh-TW.json。
+
+後端規範：
+
+資料庫與推播僅儲存「訊息代碼 (Key)」(例如 MSG_PERIOD_COMING)。
+
+發送或顯示時再依用戶語系設定 (Locale) 轉譯。
+
+2. 資料庫設計 (Database Schema)
+
+2.1 Ragic CRM 整合 (外部資料源)
+
+Base URL: https://ap14.ragic.com/goodmoonmood/forms4/7
+
+Authentication: Basic Auth (API Key)
+
+API Mode: 所有請求需帶上參數 ?api 或透過 Header 呼叫。
+
+欄位對照表 (Field Mapping)
+
+注意： 此表為 AI 串接關鍵，請嚴格參照 ID。
+
+程式變數名稱
+
+Ragic ID
+
+欄位名稱
+
+權限
+
+備註
+
+member_id
+
+1002035
+
+會員編號
+
+Read
+
+唯一識別碼，必填且唯讀
+
+name
+
+1001108
+
+姓名
+
+Read
+
+
+
+email
+
+1001109
+
+Email
+
+R/W
+
+Key (不可重複)
+
+phone
+
+1001110
+
+電話
+
+R/W
+
+主要比對欄位 (Key)
+
+line_uid
+
+1001273
+
+LINE uid
+
+Write
+
+綁定關鍵欄位
+
+tags
+
+1001123
+
+標籤
+
+R/W
+
+儲存行銷標籤
+
+total_spent
+
+1001116
+
+消費總額
+
+Read
+
+用於分眾邏輯
+
+ragic_record_id
+
+(System)
+
+Ragic ID
+
+Read
+
+用於 Update API URL
+
+2.2 Supabase App DB (內部資料庫)
+
+需新增 locale 欄位以支援多語言，並使用代碼化儲存推播訊息。
+
+-- 1. App 使用者 (app_users)
+-- 安全性備註：需開啟 RLS，僅允許 authenticated user 讀寫自己的資料
+CREATE TABLE app_users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  ragic_id INT NOT NULL,              
+  ragic_member_id VARCHAR(50),        
+  line_user_id VARCHAR(255) UNIQUE NOT NULL,
+  
+  -- I18n 設定
+  locale VARCHAR(10) DEFAULT 'zh-TW',
+  
+  -- 生理設定 (演算法參數)
+  avg_cycle_days INT DEFAULT 28,
+  avg_period_days INT DEFAULT 5,
+  luteal_phase_days INT DEFAULT 14,
+  
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 索引優化 (Index for Performance)
+CREATE INDEX idx_app_users_line_uid ON app_users(line_user_id);
+
+-- 2. 經期流水帳 (period_logs)
+CREATE TABLE period_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES app_users(id) ON DELETE CASCADE,
+  start_date DATE NOT NULL,
+  end_date DATE,
+  flow_level VARCHAR(20),
+  symptoms JSONB,  
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_period_logs_user_date ON period_logs(user_id, start_date DESC);
+
+-- 3. 推播排程 (notification_queue)
+CREATE TABLE notification_queue (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES app_users(id) ON DELETE CASCADE,
+  target_date DATE NOT NULL,
+  message_key VARCHAR(50), 
+  message_params JSONB,    
+  status VARCHAR(20) DEFAULT 'PENDING'
+);
+
+CREATE INDEX idx_notification_target ON notification_queue(target_date, status);
+
+
+3. 核心功能邏輯 (Business Logic)
+
+3.1 會員綁定與同步 (Binding & Sync)
+
+流程：LIFF 取得 LINE Token -> 驗證 -> 讀取 Ragic (by Phone) -> 寫入 Supabase。
+
+例外處理：若 Ragic API Timeout (> 5秒)，需回傳「系統忙碌中」並將請求放入 Redis Queue 或 Supabase Retry Table 稍後重試，避免前端卡死。
+
+3.2 經期預測演算法 (Cycle Prediction Algorithm)
+
+核心方法：加權平均法 (Weighted Average Method)。
+
+公式：
+
+Predicted = (C1 \times 0.5) + (C2 \times 0.3) + (C3 \times 0.2)
+
+資料清洗：週期 < 21 或 > 45 天視為異常值 (Outlier)。
+
+4. API 接口定義 (API Endpoints)
+
+路徑前綴：/api
+
+Method
+
+Endpoint
+
+描述
+
+POST
+
+/auth/bind
+
+綁定邏輯
+
+GET
+
+/me
+
+讀取用戶設定
+
+POST
+
+/period
+
+新增紀錄並觸發演算法
+
+GET
+
+/history
+
+取得歷史與預測
+
+5. 給 AI 開發者的提示 (System Prompts)
+
+(請參照前版，此處略以節省篇幅)
+
+6. 待辦事項 (Action Items)
+
+Ragic 新增欄位：下次經期預測日、排卵預測日、App 狀態。
+
+7. 軟體工程開發規範 (Software Engineering Guidelines)
+
+(請參照前版，此處略以節省篇幅)
+
+9. 原子化開發規劃 (Atomic Development Roadmap) [IMPORTANT]
+
+此章節專為 AI 輔助開發設計。請依序將每一個 Step 的指令區塊完整複製給 AI (如 Cursor / Windsurf)。完成並驗收後，才進行下一步。
+
+Phase 1: 基礎建設 (Foundation)
+
+Step 1.1: 專案初始化
+
+Role (角色): Senior Frontend Architect
+
+Instruction (指令):
+「建立 Next.js 14 (App Router) + Tailwind CSS + TypeScript 專案。請移除預設的 boilerplate 樣式，只保留一個乾淨的 "Hello World" 首頁。」
+
+Critical Reminders (關鍵提醒):
+
+Strict TypeScript: 禁止使用 any，必須開啟 strict: true。
+
+Directory Structure: 採用 src/ 目錄結構 (optional but recommended)。
+
+Clean Start: 確保沒有未使用的 CSS class殘留。
+
+Step 1.2: 開發規範與目錄
+
+Role (角色): Tech Lead
+
+Instruction (指令):
+「設定專案目錄結構，建立 /services, /components, /lib, /types 資料夾。新增 .prettierrc 設定檔以統一程式碼風格。」
+
+Critical Reminders (關鍵提醒):
+
+Modular Design: 確保資料夾職責分離，不要將所有東西丟在 app 下。
+
+Consistency: .prettierrc 建議內容為 {"semi": true, "singleQuote": true, "tabWidth": 2, "trailingComma": "all", "printWidth": 100}。
+
+Step 1.3: I18n 基礎配置
+
+Role (角色): I18n Specialist
+
+Instruction (指令):
+「安裝 next-intl。建立 locales/zh-TW.json (內容：{"hello": "你好"})。設定 Middleware 與 i18n.ts，讓首頁能根據網址或瀏覽器設定顯示中文翻譯。」
+
+Critical Reminders (關鍵提醒):
+
+Zero Hardcode: 提醒我之後開發所有 UI 文字都必須放進 json。
+
+Middleware: 確保 Middleware 設定不會阻擋 /api 或靜態資源 (_next) 的請求。
+
+Phase 2: 資料庫與型別 (Database & Types)
+
+Step 2.1: Schema 部署
+
+Role (角色): Database Administrator (DBA)
+
+Instruction (指令):
+「使用規格書 Section 2.2 的 SQL，在 Supabase 建立 app_users, period_logs, notification_queue 三張表。請務必包含索引 (Indexes)。」
+
+Critical Reminders (關鍵提醒):
+
+Naming Convention: 欄位名稱必須使用 snake_case (e.g., user_id, created_at)。
+
+Foreign Keys: 確保 Foreign Key 有設定 ON DELETE CASCADE 或適當的約束。
+
+Step 2.2: RLS 安全性設定
+
+Role (角色): Security Engineer
+
+Instruction (指令):
+「為 period_logs 和 app_users 設定 Supabase RLS (Row Level Security) Policy。規則：僅允許 auth.uid() == user_id 的使用者進行 SELECT/INSERT/UPDATE。」
+
+Critical Reminders (關鍵提醒):
+
+Security First: 預設拒絕所有請求，只開放符合規則的請求。
+
+No Service Role: 前端程式碼絕對禁止使用 service_role key 繞過 RLS。
+
+Step 2.3: 型別生成
+
+Role (角色): TypeScript Expert
+
+Instruction (指令):
+「(若環境允許) 使用 Supabase CLI 生成 database.types.ts 並放入 /types 資料夾。若無法使用 CLI，請手動根據 SQL Schema 建立準確的 TypeScript Interface。」
+
+Critical Reminders (關鍵提醒):
+
+Type Sync: 確保 Type 定義與 DB Schema 100% 一致。
+
+Utility Types: 善用 Database['public']['Tables']['TableName']['Row'] 等 Utility Type。
+
+Phase 3: 後端服務層 - Ragic 整合 (暫緩 / Skipped)
+
+Step 3.1: RagicService - 讀取 [SKIPPED]
+
+Status: 暫緩開發，待資料整合邏輯確認後再補上。
+
+Step 3.2: RagicService - 寫入 [SKIPPED]
+
+Status: 暫緩開發。
+
+Phase 4: API 開發 - 簡易認證與綁定 (API & Simple Auth)
+
+Step 4.1: API Route - 簡易綁定接口
+
+Role (角色): API Developer
+
+Instruction (指令):
+「建立 app/api/auth/bind/route.ts。流程改為簡易綁定模式 (不串接 Ragic)：
+
+接收 Request Body (phone, lineUid)。
+
+檢查 Supabase app_users 是否已有此 lineUid。
+
+若無，則建立新使用者。
+
+重要：寫入時，ragic_id 請填入 0，ragic_member_id 請填入 "TEMP_USER" (為了符合 DB Schema 的 NOT NULL 限制)。」
+
+Critical Reminders (關鍵提醒):
+
+Input Validation: 仍須使用 Zod 驗證 phone 格式。
+
+Future Proof: 請在程式碼中加上 TODO: Ragic Integration 註解，方便日後搜尋並替換回完整邏輯。
+
+Idempotency: 確保重複呼叫此 API (重複點擊綁定) 不會造成錯誤或重複建立資料。
+
+Phase 5: 核心邏輯 - 演算法 (Core Logic)
+
+Step 5.1: CycleService - 純邏輯實作
+
+Role (角色): Algorithm Specialist
+
+Instruction (指令):
+「建立 services/CycleService.ts。實作 calculateNextPeriod(historyDates)。依照規格書 Section 3.2 的加權平均公式。不需連接 DB，只要純邏輯。」
+
+Critical Reminders (關鍵提醒):
+
+Pure Function: 這個 Function 應該是 Pure 的，輸入 Dates 輸出 Prediction，不依賴外部狀態。
+
+Edge Cases: 必須處理「只有 1 筆資料」、「只有 2 筆資料」以及「資料間隔異常 (Outlier)」的情況。
+
+No External Libs: 不要引入 Numpy 或複雜數學庫，用原生 JS/TS 實作即可。
+
+Step 5.2: API Route - 新增經期
+
+Role (角色): Fullstack Developer
+
+Instruction (指令):
+「建立 app/api/period/route.ts。接收 start_date -> 寫入 period_logs -> 撈取該用戶歷史紀錄 -> 呼叫 CycleService 計算 -> 更新 app_users 的預測欄位。」
+
+Critical Reminders (關鍵提醒):
+
+Auth Guard: 確保 API 檢查 Header 中的 Auth Token (或 Supabase User Session)。
+
+Date Format: 統一使用 ISO 8601 (YYYY-MM-DD) 處理日期字串。
+
+Phase 6: 前端整合 (Frontend Integration)
+
+Step 6.1: LIFF 初始化
+
+Role (角色): LIFF Expert
+
+Instruction (指令):
+「在 layout.tsx 或 Context 中初始化 LIFF SDK。取得 lineUserId 並存入 React Context 或 Zustand Store。」
+
+Critical Reminders (關鍵提醒):
+
+Mock Environment: 在非 LINE 環境 (一般瀏覽器) 開發時，需提供 Mock User ID，方便開發測試。
+
+Client Component: LIFF SDK 只能在 Client Component (use client) 中執行。
+
+Step 6.2: 綁定頁面 UI
+
+Role (角色): Frontend Developer
+
+Instruction (指令):
+「製作手機版綁定表單。包含手機號碼輸入框。Submit 後呼叫 /api/auth/bind。成功後導向首頁。」
+
+Critical Reminders (關鍵提醒):
+
+Responsive: 確保在手機版面 (Mobile View) 顯示正常，按鈕大小適中。
+
+Feedback: API 請求期間需顯示 Loading Spinner，錯誤時顯示友善錯誤訊息 (讀取 I18n)。
+
+Step 6.3: 經期紀錄頁面 UI
+
+Role (角色): Frontend Developer
+
+Instruction (指令):
+「製作經期紀錄 UI (Calendar 或 Form)。串接 POST /api/period (新增) 與 GET /api/history (顯示預測)。」
+
+Critical Reminders (關鍵提醒):
+
+UX: 日期選擇器 (Date Picker) 必須對手機友善。
+
+Optimistic UI: 考慮使用 Optimistic Update 讓介面反應更即時。
+
+Phase 7: 最終優化 (Final Polish)
+
+Step 7.1: 補齊 I18n 文字
+
+Role (角色): Localization QA
+
+Instruction (指令):
+「檢查所有 Component，將所有寫死的中文/英文，抽換為 t('key')，並完整填入 locales/zh-TW.json。」
+
+Critical Reminders (關鍵提醒):
+
+Completeness: 確保沒有遺漏任何 User-facing 的文字。
+
+Plurals: 若有英文版，注意單複數變化 (但目前以中文為主)。
+
+Step 7.2: 移除開發 Log
+
+Role (角色): Security Auditor
+
+Instruction (指令):
+「搜尋全專案，移除所有 console.log，特別是涉及個資 (Email, Phone, IDs) 的輸出。」
+
+Critical Reminders (關鍵提醒):
+
+Clean Console: Production Build 不應在 Console 噴出除錯訊息。
