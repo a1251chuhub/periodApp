@@ -1,13 +1,14 @@
 # ---- Base Stage ----
-FROM node:18-alpine AS base
+# 升級到 Node 20 以支援 Next.js 16+
+FROM node:20-alpine AS base
 WORKDIR /app
 
 # ---- Dependencies Stage ----
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json ./
-# 使用 npm ci 安裝依賴 (讀取 package-lock.json)
-RUN npm ci
+# 改用 npm install 以自動修復 lock file 不同步的問題
+RUN npm install
 
 # ---- Builder Stage ----
 FROM base AS builder

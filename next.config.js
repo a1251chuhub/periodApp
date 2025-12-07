@@ -1,10 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  // next-intl configuration
-  experimental: {
-    serverComponentsExternalPackages: ['@supabase/supabase-js'],
-  },
+  // Next.js 16+ config
+  serverExternalPackages: ['@supabase/supabase-js'],
 }
 
 module.exports = nextConfig

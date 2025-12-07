@@ -70,7 +70,8 @@ export function LIFFProvider({ children }: LIFFProviderProps) {
         setUser({
           ...userData,
           is_bound: true,
-          next_period_date: userData.next_period_date
+          // 確保將 null 轉為 undefined，否則 TypeScript 會報錯
+          next_period_date: userData.next_period_date || undefined
         })
       } else {
         // New user
