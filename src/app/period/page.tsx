@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useTranslations } from 'next-intl'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { useUserStore } from '@/stores/userStore'
@@ -16,7 +15,6 @@ interface PeriodLog {
 }
 
 export default function PeriodPage() {
-  const t = useTranslations()
   const router = useRouter()
   const { user, isLoading } = useUserStore()
 
@@ -64,12 +62,12 @@ export default function PeriodPage() {
     setSubmitSuccess(false)
 
     if (!startDate) {
-      setSubmitError(t('period.error.invalidDate'))
+      setSubmitError('請選擇有效日期')
       return
     }
 
     if (!user) {
-      setSubmitError(t('common.error'))
+      setSubmitError('發生錯誤')
       return
     }
 
@@ -106,10 +104,10 @@ export default function PeriodPage() {
         // Clear success message after 3 seconds
         setTimeout(() => setSubmitSuccess(false), 3000)
       } else {
-        setSubmitError(data.error || t('period.error.generic'))
+        setSubmitError(data.error || '儲存失敗，請稍後再試')
       }
     } catch (error) {
-      setSubmitError(t('period.error.generic'))
+      setSubmitError('儲存失敗，請稍後再試')
     } finally {
       setIsSubmitting(false)
     }
@@ -131,11 +129,11 @@ export default function PeriodPage() {
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">{t('period.title')}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">經期記錄</h1>
           {nextPeriodPrediction && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <p className="text-blue-800">
-                {t('period.history.nextPeriod')}: {formatDate(nextPeriodPrediction)}
+                下次經期預計: {formatDate(nextPeriodPrediction)}
               </p>
             </div>
           )}
@@ -143,20 +141,20 @@ export default function PeriodPage() {
 
         {/* Add new record form */}
         <div className="bg-white shadow rounded-lg p-6 mb-8">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">{t('period.addRecord')}</h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">新增經期記錄</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('period.startDate')}
+                  開始日期
                 </label>
                 <div className="relative">
                   <DatePicker
                     selected={startDate}
                     onChange={(date) => setStartDate(date)}
                     dateFormat="yyyy/MM/dd"
-                    placeholderText={t('period.selectDate')}
+                    placeholderText="選擇日期"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                     maxDate={new Date()}
                   />
@@ -170,14 +168,14 @@ export default function PeriodPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('period.endDate')} ({t('common.error')})
+                  結束日期 (選填)
                 </label>
                 <div className="relative">
                   <DatePicker
                     selected={endDate}
                     onChange={(date) => setEndDate(date)}
                     dateFormat="yyyy/MM/dd"
-                    placeholderText={t('period.selectDate')}
+                    placeholderText="選擇日期"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                     minDate={startDate || undefined}
                     maxDate={new Date()}
@@ -193,7 +191,7 @@ export default function PeriodPage() {
 
             {submitSuccess && (
               <div className="rounded-md bg-green-50 p-4">
-                <div className="text-sm text-green-700">{t('period.success')}</div>
+                <div className="text-sm text-green-700">記錄新增成功</div>
               </div>
             )}
 
@@ -209,7 +207,7 @@ export default function PeriodPage() {
                 disabled={isSubmitting}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? t('period.loading') : t('period.submit')}
+                {isSubmitting ? '儲存中...' : '儲存'}
               </button>
             </div>
           </form>
@@ -217,14 +215,14 @@ export default function PeriodPage() {
 
         {/* History section */}
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">{t('period.history.title')}</h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">歷史記錄</h2>
 
           {isLoadingHistory ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
             </div>
           ) : history.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">{t('period.history.noData')}</p>
+            <p className="text-gray-500 text-center py-8">尚未有記錄</p>
           ) : (
             <div className="space-y-4">
               {history.map((record) => (
