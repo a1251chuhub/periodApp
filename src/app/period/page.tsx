@@ -42,7 +42,17 @@ export default function PeriodPage() {
   const loadHistory = async () => {
     try {
       setIsLoadingHistory(true)
-      const response = await fetch('/api/history')
+
+      if (!user) {
+        console.error('No user available')
+        return
+      }
+
+      const response = await fetch('/api/history', {
+        headers: {
+          'X-Line-User-Id': user.line_user_id,
+        },
+      })
       const data = await response.json()
 
       if (data.success) {

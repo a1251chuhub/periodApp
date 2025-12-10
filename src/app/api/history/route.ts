@@ -2,41 +2,62 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { CycleService } from '@/services/CycleService'
 
-// Mock authentication - should be replaced with proper auth
-function getCurrentUserId(): string | null {
-  // In production, this should extract user ID from auth headers/tokens
-  // For now, we'll assume the user ID is passed somehow
-  return null
-}
-
 export async function GET(request: NextRequest) {
   try {
-    // TODO: Implement proper authentication
-    const userId = getCurrentUserId()
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Auth guard: Check for Authorization header (or X-Line-User-Id)
+    const authHeader = request.headers.get('Authorization') || request.headers.get('X-Line-User-Id')
+
+    if (!authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Authentication required. Please provide Authorization header or X-Line-User-Id.',
+        },
+        { status: 401 }
+      )
     }
 
-    // Get user settings
-    const { data: userData, error: userError } = await supabase
+    // Extract line_user_id from Authorization header
+    let lineUserId = authHeader
+
+    // Handle Bearer token format
+    if (authHeader.startsWith('Bearer ')) {
+      lineUserId = authHeader.substring(7)
+    }
+
+    // Get the user ID from our app_users table
+    const { data: appUser, error: userError } = await supabase
       .from('app_users')
-      .select('id')
-      .eq('id', userId)
+      .select('id, avg_cycle_days, avg_period_days')
+      .eq('line_user_id', lineUserId)
       .single()
 
-    if (userError) {
-      return NextResponse.json({ error: 'Failed to fetch user data' }, { status: 500 })
+    if (userError || !appUser) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'User not found. Please bind your account first.',
+        },
+        { status: 404 }
+      )
     }
 
     // Get period log history
     const { data: historyData, error: historyError } = await supabase
       .from('period_logs')
-      .select('start_date, end_date, flow_level, symptoms')
-      .eq('user_id', userId)
+      .select('id, start_date, end_date, flow_level, symptoms')
+      .eq('user_id', appUser.id)
       .order('start_date', { ascending: false })
 
     if (historyError) {
-      return NextResponse.json({ error: 'Failed to fetch history' }, { status: 500 })
+      console.error('Failed to fetch history:', historyError)
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Failed to fetch history'
+        },
+        { status: 500 }
+      )
     }
 
     // Calculate prediction using CycleService
@@ -56,6 +77,12 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('History API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Internal server error'
+      },
+      { status: 500 }
+    )
   }
 }
